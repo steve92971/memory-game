@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>記憶翻牌挑戰</title>
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --panel: #ffffff;
+    --text: #2b2b2b;
+    --muted: #6b6b6b;
+    --accent: #e8743b;
+    --accent-2: #3b82c4;
+    --card-back: #2f3e5c;
+    --card-face: #fffdf8;
+    --matched: #d9f2e1;
+    --border: #e2ddd2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171a21;
+      --panel: #222733;
+      --text: #ecebe7;
+      --muted: #a3a3a3;
+      --card-back: #4a5d85;
+      --card-face: #2c3240;
+      --matched: #24463a;
+      --border: #343b4b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 20px 16px 40px; }
+  header { text-align: center; margin-bottom: 16px; }
+  h1 { margin: 0 0 4px; font-size: 1.8rem; }
+  .sub { margin: 0; color: var(--muted); font-size: .95rem; }
+
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 12px; margin-bottom: 14px;
+  }
+  .group { display: flex; gap: 6px; align-items: center; }
+  .group span { font-size: .85rem; color: var(--muted); }
+  button {
+    font: inherit; font-size: .9rem; cursor: pointer;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    padding: 7px 12px; border-radius: 9px; transition: transform .1s, background .2s;
+  }
+  button:hover { transform: translateY(-1px); }
+  button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
+  button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+  .stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px;
+  }
+  .stat {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 8px; text-align: center;
+  }
+  .stat b { display: block; font-size: 1.3rem; }
+  .stat small { color: var(--muted); font-size: .78rem; }
+
+  .board { display: grid; gap: 10px; perspective: 900px; max-width: 640px; margin: 0 auto; }
+  .card {
+    position: relative; aspect-ratio: 3 / 4; cursor: pointer;
+    transform-style: preserve-3d; transition: transform .45s;
+  }
+  .card.flipped, .card.matched { transform: rotateY(180deg); }
+  .card.matched { cursor: default; }
+  .face {
+    position: absolute; inset: 0; border-radius: 12px; backface-visibility: hidden;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    padding: 6px; border: 1px solid var(--border);
+  }
+  .back {
+    background: var(--card-back);
+    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.07) 0 8px, transparent 8px 16px);
+    color: rgba(255,255,255,.75); font-size: 1.6rem;
+  }
+  .front { background: var(--card-face); transform: rotateY(180deg); }
+  .front.emoji { font-size: clamp(1.8rem, 7vw, 2.8rem); }
+  .front.term { font-size: clamp(.85rem, 3vw, 1.15rem); font-weight: 700; color: var(--accent); overflow-wrap: anywhere; }
+  .front.desc { font-size: clamp(.68rem, 2.4vw, .85rem); line-height: 1.35; }
+  .card.matched .front { background: var(--matched); }
+  .card.shake { animation: shake .4s; }
+  @keyframes shake {
+    0%,100% { transform: rotateY(180deg) translateX(0); }
+    25% { transform: rotateY(180deg) translateX(-6px); }
+    75% { transform: rotateY(180deg) translateX(6px); }
+  }
+
+  .modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,.5);
+    display: none; align-items: center; justify-content: center; padding: 16px; z-index: 10;
+  }
+  .modal.show { display: flex; }
+  .modal-box {
+    background: var(--panel); border-radius: 16px; padding: 24px; max-width: 360px; width: 100%;
+    text-align: center; border: 1px solid var(--border);
+  }
+  .modal-box h2 { margin: 0 0 8px; }
+  .stars { font-size: 2rem; letter-spacing: 4px; margin: 6px 0; }
+  .record { color: var(--accent); font-weight: 700; min-height: 1.4em; }
+  .tip { text-align: center; color: var(--muted); font-size: .85rem; margin-top: 16px; }
+
+  .confetti {
+    position: fixed; top: -10px; width: 9px; height: 14px; z-index: 11; pointer-events: none;
+    animation: fall linear forwards;
+  }
+  @keyframes fall { to { transform: translateY(105vh) rotate(720deg); } }
+
+  @media (max-width: 520px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .board { gap: 7px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🧠 記憶翻牌挑戰</h1>
+    <p class="sub">你的記性比 RNN 好嗎？翻開兩張一樣的牌就能配對成功！</p>
+  </header>
+
+  <div class="controls">
+    <div class="group">
+      <span>模式</span>
+      <button data-mode="emoji" class="active">🐶 動物</button>
+      <button data-mode="ai">🤖 AI 名詞</button>
+    </div>
+    <div class="group">
+      <span>難度</span>
+      <button data-level="easy" class="active">簡單</button>
+      <button data-level="normal">普通</button>
+      <button data-level="hard">困難</button>
+    </div>
+    <div class="group">
+      <button id="hintBtn">💡 提示</button>
+      <button id="soundBtn">🔊 音效</button>
+      <button id="restartBtn" class="primary">🔄 重新開始</button>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><b id="time">0</b><small>秒數</small></div>
+    <div class="stat"><b id="moves">0</b><small>步數</small></div>
+    <div class="stat"><b id="pairs">0/0</b><small>已配對</small></div>
+    <div class="stat"><b id="best">—</b><small>最佳紀錄</small></div>
+  </div>
+
+  <div class="board" id="board"></div>
+
+  <p class="tip" id="tip">動物模式：找出兩張一樣的動物。</p>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <h2>🎉 挑戰成功！</h2>
+    <div class="stars" id="stars"></div>
+    <p id="result"></p>
+    <p class="record" id="recordMsg"></p>
+    <button class="primary" id="againBtn">再玩一次</button>
+  </div>
+</div>
+
+<script>
+const EMOJIS = ['🐶','🐱','🦊','🐼','🐸','🐵','🦁','🐯','🐨','🐰','🐙','🦄'];
+
+// AI 名詞模式：一張是名詞，一張是解釋（第五週上課內容）
+const AI_PAIRS = [
+  ['RNN', '會把上一步的輸出再傳回來的神經網路'],
+  ['Attention', '決定每個字要注意哪些字'],
+  ['Q', 'Query：我要找什麼'],
+  ['K', 'Key：拿來和 Q 比對的標籤'],
+  ['V', 'Value：真正要取出的內容'],
+  ['Softmax', '把分數變成加起來為 1 的權重'],
+  ['Transformer', '只靠注意力機制、不用 RNN 的模型'],
+  ['GPT', '只用解碼器的 Transformer'],
+  ['位置編碼', '告訴模型每個字的順序'],
+  ['多頭注意力', '同時從好幾個角度做注意力'],
+  ['內積', '計算兩個向量有多相似'],
+  ['√dk', '縮放分數，避免 Softmax 贏者通吃']
+];
+
+const LEVELS = {
+  easy:   { pairs: 6,  cols: 4, mobileCols: 3 },
+  normal: { pairs: 8,  cols: 4, mobileCols: 4 },
+  hard:   { pairs: 12, cols: 6, mobileCols: 4 }
+};
+
+const state = {
+  mode: 'emoji', level: 'easy', cards: [], open: [], matched: 0,
+  moves: 0, seconds: 0, timer: null, started: false, lock: false,
+  hintUsed: false, sound: true
+};
+
+const $ = id => document.getElementById(id);
+const board = $('board');
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function buildDeck() {
+  const n = LEVELS[state.level].pairs;
+  let deck = [];
+  if (state.mode === 'emoji') {
+    shuffle([...EMOJIS]).slice(0, n).forEach((e, i) => {
+      deck.push({ pair: i, text: e, type: 'emoji' });
+      deck.push({ pair: i, text: e, type: 'emoji' });
+    });
+  } else {
+    shuffle([...AI_PAIRS]).slice(0, n).forEach(([term, desc], i) => {
+      deck.push({ pair: i, text: term, type: 'term' });
+      deck.push({ pair: i, text: desc, type: 'desc' });
+    });
+  }
+  return shuffle(deck);
+}
+
+function setColumns() {
+  const lv = LEVELS[state.level];
+  const cols = window.innerWidth <= 520 ? lv.mobileCols : lv.cols;
+  board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+}
+
+function newGame() {
+  clearInterval(state.timer);
+  Object.assign(state, {
+    cards: buildDeck(), open: [], matched: 0, moves: 0, seconds: 0,
+    started: false, lock: false, hintUsed: false, timer: null
+  });
+  board.innerHTML = '';
+  state.cards.forEach((c, idx) => {
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.dataset.idx = idx;
+    el.innerHTML = `<div class="face back">?</div><div class="face front ${c.type}">${c.text}</div>`;
+    el.addEventListener('click', () => flip(el));
+    c.el = el;
+    board.appendChild(el);
+  });
+  setColumns();
+  $('hintBtn').disabled = false;
+  $('modal').classList.remove('show');
+  $('tip').textContent = state.mode === 'emoji'
+    ? '動物模式：找出兩張一樣的動物。'
+    : 'AI 名詞模式：把名詞和它的解釋配成一對（第五週上課內容）。';
+  updateStats();
+}
+
+function startTimer() {
+  state.started = true;
+  state.timer = setInterval(() => { state.seconds++; updateStats(); }, 1000);
+}
+
+function flip(el) {
+  if (state.lock || el.classList.contains('flipped') || el.classList.contains('matched')) return;
+  if (!state.started) startTimer();
+  el.classList.add('flipped');
+  state.open.push(el);
+  if (state.open.length === 2) {
+    state.moves++;
+    checkPair();
+  }
+  updateStats();
+}
+
+function checkPair() {
+  const [a, b] = state.open;
+  const ca = state.cards[a.dataset.idx], cb = state.cards[b.dataset.idx];
+  if (ca.pair === cb.pair) {
+    a.classList.add('matched'); b.classList.add('matched');
+    state.open = [];
+    state.matched++;
+    beep(660, .12);
+    if (state.matched === LEVELS[state.level].pairs) setTimeout(win, 500);
+  } else {
+    state.lock = true;
+    beep(200, .15);
+    setTimeout(() => { a.classList.add('shake'); b.classList.add('shake'); }, 450);
+    setTimeout(() => {
+      a.classList.remove('flipped', 'shake'); b.classList.remove('flipped', 'shake');
+      state.open = [];
+      state.lock = false;
+    }, 1000);
+  }
+}
+
+function useHint() {
+  if (state.hintUsed || state.lock) return;
+  state.hintUsed = true;
+  state.lock = true;
+  $('hintBtn').disabled = true;
+  if (!state.started) startTimer();
+  state.seconds += 5;  // 使用提示加 5 秒
+  const hidden = state.cards.map(c => c.el).filter(el => !el.classList.contains('matched') && !el.classList.contains('flipped'));
+  hidden.forEach(el => el.classList.add('flipped'));
+  setTimeout(() => {
+    hidden.forEach(el => el.classList.remove('flipped'));
+    state.lock = false;
+  }, 1500);
+  updateStats();
+}
+
+function recordKey() { return `memory-best-${state.mode}-${state.level}`; }
+
+function loadBest() {
+  try { return JSON.parse(localStorage.getItem(recordKey())); } catch (e) { return null; }
+}
+
+function saveBest(rec) {
+  try { localStorage.setItem(recordKey(), JSON.stringify(rec)); } catch (e) {}
+}
+
+function win() {
+  clearInterval(state.timer);
+  const n = LEVELS[state.level].pairs;
+  const stars = state.moves <= n * 1.5 ? 3 : state.moves <= n * 2.2 ? 2 : 1;
+  $('stars').textContent = '⭐'.repeat(stars) + '☆'.repeat(3 - stars);
+  $('result').textContent = `用了 ${state.seconds} 秒、${state.moves} 步完成！`;
+  const best = loadBest();
+  if (!best || state.seconds < best.time) {
+    saveBest({ time: state.seconds, moves: state.moves });
+    $('recordMsg').textContent = '🏆 新紀錄！';
+  } else {
+    $('recordMsg').textContent = `最佳紀錄：${best.time} 秒`;
+  }
+  $('modal').classList.add('show');
+  confetti();
+  beep(880, .3);
+  updateStats();
+}
+
+function confetti() {
+  const colors = ['#e8743b', '#3b82c4', '#f2c14e', '#5bb57a', '#c45bb5'];
+  for (let i = 0; i < 70; i++) {
+    const p = document.createElement('div');
+    p.className = 'confetti';
+    p.style.left = Math.random() * 100 + 'vw';
+    p.style.background = colors[i % colors.length];
+    p.style.animationDuration = 1.8 + Math.random() * 1.8 + 's';
+    p.style.animationDelay = Math.random() * .5 + 's';
+    document.body.appendChild(p);
+    setTimeout(() => p.remove(), 4500);
+  }
+}
+
+let audioCtx = null;
+function beep(freq, dur) {
+  if (!state.sound) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime + dur);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + dur);
+  } catch (e) {}
+}
+
+function updateStats() {
+  $('time').textContent = state.seconds;
+  $('moves').textContent = state.moves;
+  $('pairs').textContent = `${state.matched}/${LEVELS[state.level].pairs}`;
+  const best = loadBest();
+  $('best').textContent = best ? `${best.time}s` : '—';
+}
+
+document.querySelectorAll('[data-mode]').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('[data-mode]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  state.mode = btn.dataset.mode;
+  newGame();
+}));
+
+document.querySelectorAll('[data-level]').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('[data-level]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  state.level = btn.dataset.level;
+  newGame();
+}));
+
+$('hintBtn').addEventListener('click', useHint);
+$('restartBtn').addEventListener('click', newGame);
+$('againBtn').addEventListener('click', newGame);
+$('soundBtn').addEventListener('click', () => {
+  state.sound = !state.sound;
+  $('soundBtn').textContent = state.sound ? '🔊 音效' : '🔇 靜音';
+});
+window.addEventListener('resize', setColumns);
+
+newGame();
+</script>
+</body>
+</html>
